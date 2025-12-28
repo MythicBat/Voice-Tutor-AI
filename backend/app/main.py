@@ -1,8 +1,10 @@
 import os
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from app.helper import text_to_speech_mp3_bytes
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
@@ -34,6 +36,11 @@ app.add_middleware(
 )
 
 # Request / Response models
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+    model: Optional[str] = None
+
 class TutorRequest(BaseModel):
     message: str
     grade_level: Optional[str] = None
@@ -66,6 +73,23 @@ def health_check():
     return {"status": "ok", "model": GEMINI_MODEL_ID}
 
 @app.post("/api/tutor", response_model=TutorResponse)
+async def tts(request: TTSRequest):
+    """
+    Converts text -> speech (MP3) using ElevenLabs.
+    Returns raw audio bytes (audio/mpeg).
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    try:
+        audio_bytes = text_to_speech_mp3_bytes(
+            text=request.text,
+            voice=request.voice,
+            model=request.model,
+        )
+        return Response(content=audio_bytes, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
+    
 async def tutor(request: TutorRequest):
     """
     Main endpoint: takes a student's question and returns a friendly STEM explanation.
