@@ -73,23 +73,6 @@ def health_check():
     return {"status": "ok", "model": GEMINI_MODEL_ID}
 
 @app.post("/api/tutor", response_model=TutorResponse)
-async def tts(request: TTSRequest):
-    """
-    Converts text -> speech (MP3) using ElevenLabs.
-    Returns raw audio bytes (audio/mpeg).
-    """
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="text is required")
-    try:
-        audio_bytes = text_to_speech_mp3_bytes(
-            text=request.text,
-            voice=request.voice,
-            model=request.model,
-        )
-        return Response(content=audio_bytes, media_type="audio/mpeg")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
-    
 async def tutor(request: TutorRequest):
     """
     Main endpoint: takes a student's question and returns a friendly STEM explanation.
@@ -111,16 +94,35 @@ Your job:
 3. Show a simple worked example if relevant.
 4. Finish by asking the student a small check question to confirm understanding.
 """
-    response = client.models.generate_content(
-        model=GEMINI_MODEL_ID,
-        contents=user_prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            temperature=0.7,
-            max_output_tokens=512,
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL_ID,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.7,
+                max_output_tokens=512,
+            ),
+        )
+        answer = response.text or ""
+        return TutorResponse(reply=answer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tutor failed: {e}")
 
-    answer = response.text
-
-    return TutorResponse(reply=answer)
+@app.post("/api/tts")
+async def tts(request: TTSRequest):
+    """
+    Converts text to speech (MP3) using Eleven Labs.
+    Returns raw audio bytes.
+    """
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text is empty")
+    try:
+        audio_bytes = text_to_speech_mp3_bytes(
+            text=request.text,
+            voice=request.voice,
+            model=request.model,
+        )
+        return Response(content=audio_bytes, media_type="audio/mpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
